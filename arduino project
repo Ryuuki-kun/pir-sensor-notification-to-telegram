@@ -1,0 +1,70 @@
+#include <SoftwareSerial.h>
+
+SoftwareSerial esp8266(2, 3); // RX, TX
+
+// WiFi credentials
+const char* ssid = "wifi_name";
+const char* password = "wifi_password";
+
+// Telegram Bot credentials
+const char* botToken = "token_from_bot"; // Replace with your Bot Token
+const char* chatID = "chat_id"; // Replace with your Chat ID
+
+// PIR sensor pin
+const int pirPin = 4; // Adjust the pin as necessary
+const int ledPin = 13; // LED pin
+
+void setup() {
+  pinMode(pirPin, INPUT);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW); // Ensure the LED is off initially
+
+  Serial.begin(115200);
+  esp8266.begin(115200);
+
+  Serial.println("Initializing...");
+  connectToWiFi();
+}
+
+void loop() {
+  int pirState = digitalRead(pirPin);
+  if (pirState == HIGH) {
+    digitalWrite(ledPin, HIGH); // Turn on the LED
+    sendTelegramMessage("Motion detected by the PIR sensor!");
+    delay(5000); // Wait 5 seconds before checking again
+  } else {
+    digitalWrite(ledPin, LOW); // Turn off the LED
+  }
+  delay(100); // Small delay to avoid bouncing
+}
+
+void connectToWiFi() {
+  sendCommand("AT", "OK", 1000);
+  sendCommand("AT+CWMODE=1", "OK", 1000);
+  sendCommand("AT+CWJAP=\"" + String(ssid) + "\",\"" + String(password) + "\"", "OK", 10000);
+}
+
+void sendTelegramMessage(String message) {
+  String url = "https://api.telegram.org/bot" + String(botToken) + "/sendMessage?chat_id=" + String(chatID) + "&text=" + message;
+  sendCommand("AT+CIPSTART=\"TCP\",\"api.telegram.org\",80", "OK", 1000);
+  String httpRequest = "GET /bot" + String(botToken) + "/sendMessage?chat_id=" + String(chatID) + "&text=" + message + " HTTP/1.1\r\nHost: api.telegram.org\r\nConnection: close\r\n\r\n";
+  sendCommand("AT+CIPSEND=" + String(httpRequest.length()), ">", 1000);
+  sendCommand(httpRequest, "OK", 5000);
+  sendCommand("AT+CIPCLOSE", "OK", 1000);
+}
+
+void sendCommand(String command, String response, int timeout) {
+  esp8266.println(command);
+  long int time = millis();
+  while ((time + timeout) > millis()) {
+    while (esp8266.available()) {
+      String reply = esp8266.readString();
+      if (reply.indexOf(response) != -1) {
+        Serial.println("Command: " + command + " executed successfully.");
+        Serial.println("Response: " + reply);
+        return;
+      }
+    }
+  }
+  Serial.println("Command: " + command + " timed out.");
+}
